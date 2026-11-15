@@ -3,6 +3,10 @@ import ReactDOM from 'react-dom/client';
 import { HashRouter } from 'react-router-dom';
 import App from './App';
 import './styles.css';
+import { registerSW } from 'virtual:pwa-register';
+
+// Caches the app so it opens with no connection.
+registerSW({ immediate: true });
 
 // Ask the browser not to evict the only copy of the training log.
 void navigator.storage?.persist?.();
