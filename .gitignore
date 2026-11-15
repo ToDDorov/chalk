@@ -1,0 +1,7 @@
+node_modules
+dist
+*.local
+.vite
+
+# Personal notes and numbers: kept on this machine, never published
+workout-tracker-spec.md
