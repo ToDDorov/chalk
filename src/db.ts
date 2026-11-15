@@ -12,6 +12,7 @@ import { buildSeed } from './seed';
 import { blockWeek } from './lib/dates';
 import { isTimeScore, normalizeName, parseTimeToSeconds } from './lib/score';
 import type { RawSession } from './lib/plan';
+import type { BackupData, BackupFile } from './lib/backup';
 
 class ChalkDB extends Dexie {
   exercises!: Table<Exercise, string>;
@@ -186,3 +187,34 @@ export const previousMetcon = async (name: string, beforeDate: string, excludeWo
   }
   return undefined;
 };
+
+/** Everything in the database, as one backup file. */
+export const buildBackup = async (): Promise<BackupFile> => ({
+  app: 'chalk',
+  version: 1,
+  exportedAt: new Date().toISOString(),
+  data: {
+    exercises: await db.exercises.toArray(),
+    blocks: await db.blocks.toArray(),
+    plans: await db.plans.toArray(),
+    workouts: await db.workouts.toArray(),
+    bodyweight: await db.bodyweight.toArray(),
+  },
+});
+
+/** Replaces everything in the database with the backup. All or nothing. */
+export const restoreBackup = (data: BackupData) =>
+  db.transaction('rw', [db.exercises, db.blocks, db.plans, db.workouts, db.bodyweight], async () => {
+    await Promise.all([
+      db.exercises.clear(),
+      db.blocks.clear(),
+      db.plans.clear(),
+      db.workouts.clear(),
+      db.bodyweight.clear(),
+    ]);
+    await db.exercises.bulkAdd(data.exercises);
+    await db.blocks.bulkAdd(data.blocks);
+    await db.plans.bulkAdd(data.plans);
+    await db.workouts.bulkAdd(data.workouts);
+    await db.bodyweight.bulkAdd(data.bodyweight);
+  });

@@ -3,6 +3,7 @@ import { addDays, addMonths, blockWeek, isISODate, monthGrid, startOfWeek, weekD
 import { normalizeName, parseTimeToSeconds } from './score';
 import { parsePlanText, planExerciseNames } from './plan';
 import { summarizeSets } from './summary';
+import { backupDue, parseBackup } from './backup';
 
 describe('dates', () => {
   it('starts weeks on Monday', () => {
@@ -110,5 +111,62 @@ describe('set summary', () => {
     expect(summarizeSets([set(60, 5), set(70, 3), set(80, 1)])).toBe('3 sets, top 80 kg × 1');
     expect(summarizeSets([set(85, 5), set(85, 5, false)])).toBe('1×5 @ 85 kg (1 of 2 sets)');
     expect(summarizeSets([set(85, 5, false)])).toBe('0 of 1 sets done');
+  });
+});
+
+describe('backup', () => {
+  const file = (data: object, extra: object = {}) =>
+    JSON.stringify({ app: 'chalk', version: 1, exportedAt: '2026-11-16T10:00:00.000Z', data, ...extra });
+  const empty = { exercises: [], blocks: [], plans: [], workouts: [], bodyweight: [] };
+
+  it('reads a valid backup and rebuilds metcon names', () => {
+    const r = parseBackup(
+      file({
+        ...empty,
+        exercises: [{ id: 'e1', name: 'Back Squat', category: 'barbell', unit: 'kg' }],
+        workouts: [
+          {
+            id: 'w1',
+            date: '2026-11-16',
+            title: 'Test',
+            metconNames: ['wrong'],
+            entries: [
+              { kind: 'strength', exerciseId: 'e1', sets: [{ reps: 5, weightKg: 80, done: true }] },
+              { kind: 'metcon', name: ' Fran ', scoreType: 'time', score: '4:30', rx: true },
+            ],
+          },
+        ],
+      }),
+    );
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.file.data.exercises).toHaveLength(1);
+    expect(r.file.data.workouts[0].metconNames).toEqual(['fran']);
+  });
+
+  it('rejects files that are not usable backups', () => {
+    const bad = (t: string) => {
+      const r = parseBackup(t);
+      return r.ok ? '' : r.error;
+    };
+    expect(bad('nope')).toMatch(/not valid JSON/);
+    expect(bad('{"sessions":[]}')).toMatch(/not a Chalk backup/);
+    expect(bad(file(empty, { version: 2 }))).toMatch(/newer version/);
+    expect(bad(file({ ...empty, workouts: undefined }))).toMatch(/no "workouts" list/);
+    expect(bad(file({ ...empty, workouts: [{ id: 'w', date: 'yesterday', entries: [] }] }))).toMatch(/workouts item 1/);
+    expect(
+      bad(file({ ...empty, workouts: [{ id: 'w', date: '2026-11-16', entries: [{ kind: 'strength' }] }] })),
+    ).toMatch(/workouts item 1/);
+    expect(bad(file({ ...empty, exercises: [{ name: 'No id' }] }))).toMatch(/exercises item 1/);
+  });
+
+  it('reminds after 30 days, counting from the last export or first use', () => {
+    const base = { today: '2026-12-20', hasData: true };
+    expect(backupDue({ ...base, firstUse: '2026-11-16' })).toBe(true);
+    expect(backupDue({ ...base, firstUse: '2026-11-25' })).toBe(false);
+    expect(backupDue({ ...base, firstUse: '2026-11-16', lastExport: '2026-12-01' })).toBe(false);
+    expect(backupDue({ ...base, firstUse: '2026-11-16', hasData: false })).toBe(false);
+    expect(backupDue({ ...base, firstUse: '2026-11-16', snoozedOn: '2026-12-18' })).toBe(false);
+    expect(backupDue({ ...base, firstUse: '2026-11-16', snoozedOn: '2026-12-13' })).toBe(true);
   });
 });

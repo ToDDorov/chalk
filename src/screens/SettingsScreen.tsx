@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import BackupCard from '../components/BackupCard';
 import { db } from '../db';
 import { todayISO } from '../lib/dates';
 import { formatKg } from '../lib/summary';
@@ -107,6 +108,7 @@ export default function SettingsScreen() {
   return (
     <>
       <h1 className="title">Settings</h1>
+      <BackupCard />
       <div className="row between">
         <h2>Exercise library</h2>
         <button className="btn primary" onClick={() => edit(blank())}>

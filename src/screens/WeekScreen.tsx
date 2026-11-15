@@ -14,6 +14,7 @@ import {
   todayISO,
   weekDays,
 } from '../lib/dates';
+import { backupDue, readDate, writeDate } from '../lib/backup';
 import { summarizeEntry, summarizePlanned } from '../lib/summary';
 import { useExercises } from '../lib/useExercises';
 import type { PlannedSession } from '../types';
@@ -39,6 +40,15 @@ export default function WeekScreen() {
     [from, to],
   );
   const blocks = useLiveQuery(() => db.blocks.toArray(), []);
+  const workoutCount = useLiveQuery(() => db.workouts.count(), []);
+  const [snoozedOn, setSnoozedOn] = useState(() => readDate('snoozedOn'));
+  const remindBackup = backupDue({
+    today,
+    firstUse: readDate('firstUse'),
+    lastExport: readDate('lastExport'),
+    snoozedOn,
+    hasData: (workoutCount ?? 0) > 0,
+  });
 
   const { marks, plannedCount, doneCount } = useMemo(() => {
     const marks = new Map<string, DayMark>();
@@ -74,6 +84,26 @@ export default function WeekScreen() {
 
   return (
     <>
+      {remindBackup && (
+        <div className="card">
+          <p>It has been a while since your last backup. Your log exists only on this device.</p>
+          <div className="row">
+            <button
+              className="btn grow"
+              onClick={() => {
+                writeDate('snoozedOn', today);
+                setSnoozedOn(today);
+              }}
+            >
+              Later
+            </button>
+            <button className="btn primary grow" onClick={() => navigate('/settings')}>
+              Back up now
+            </button>
+          </div>
+        </div>
+      )}
+
       <div className="cal-head">
         <button
           className="cal-month"
