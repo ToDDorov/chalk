@@ -1,10 +1,12 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useLiveQuery } from 'dexie-react-hooks';
+import NumCell from '../components/NumCell';
 import Stepper from '../components/Stepper';
 import { db, previousMetcon, saveWorkout } from '../db';
 import { formatShortDate, isISODate } from '../lib/dates';
 import { scorePlaceholder } from '../lib/score';
+import { bestWeightElsewhere, previousLift } from '../lib/stats';
 import { formatKg } from '../lib/summary';
 import { useExercises } from '../lib/useExercises';
 import {
@@ -24,6 +26,7 @@ export default function WorkoutScreen() {
   const { id = '' } = useParams();
   const navigate = useNavigate();
   const { list: exercises } = useExercises();
+  const all = useLiveQuery(() => db.workouts.toArray(), []) ?? [];
   // The editor owns the state and writes every change straight through to
   // IndexedDB, so nothing is lost if the phone locks mid-session.
   const [workout, setWorkout] = useState<Workout | null | undefined>(undefined);
@@ -93,7 +96,7 @@ export default function WorkoutScreen() {
       {workout.entries.map((entry, i) => (
         <div key={i} className="card">
           {entry.kind === 'strength' && (
-            <StrengthEditor entry={entry} exercises={exercises} onChange={(e) => setEntry(i, e)} />
+            <StrengthEditor entry={entry} exercises={exercises} workout={workout} all={all} onChange={(e) => setEntry(i, e)} />
           )}
           {entry.kind === 'metcon' && (
             <MetconEditor entry={entry} workout={workout} onChange={(e) => setEntry(i, e)} />
@@ -114,7 +117,7 @@ export default function WorkoutScreen() {
             addEntry({
               kind: 'strength',
               exerciseId: firstOf((e) => e.category === 'barbell'),
-              sets: [{ reps: 5, weightKg: 20, done: true }],
+              sets: [{ reps: 5, weightKg: 20, done: false }],
             })
           }
         >
@@ -190,14 +193,38 @@ function ExerciseSelect(props: { value: string; exercises: Exercise[]; onChange:
   );
 }
 
-function StrengthEditor(props: { entry: StrengthEntry; exercises: Exercise[]; onChange: Patch<StrengthEntry> }) {
-  const { entry, exercises, onChange } = props;
+function StrengthEditor(props: {
+  entry: StrengthEntry;
+  exercises: Exercise[];
+  workout: Workout;
+  all: Workout[];
+  onChange: Patch<StrengthEntry>;
+}) {
+  const { entry, exercises, workout, all, onChange } = props;
   const [open, setOpen] = useState<number | null>(null);
   const exercise = exercises.find((e) => e.id === entry.exerciseId);
   const weightStep = exercise?.category === 'barbell' ? 2.5 : 1;
 
+  const previous = useMemo(
+    () => previousLift(all, entry.exerciseId, workout.date, workout.id),
+    [all, entry.exerciseId, workout.date, workout.id],
+  );
+  const bestElsewhere = useMemo(
+    () => bestWeightElsewhere(all, entry.exerciseId, workout.id),
+    [all, entry.exerciseId, workout.id],
+  );
+  // The heaviest completed set today is the record, if it beats every other day.
+  const doneWeights = entry.sets.filter((s) => s.done && s.reps > 0).map((s) => s.weightKg);
+  const todayBest = doneWeights.length ? Math.max(...doneWeights) : undefined;
+  const recordIndex =
+    todayBest !== undefined && bestElsewhere !== undefined && todayBest > bestElsewhere
+      ? entry.sets.findIndex((s) => s.done && s.weightKg === todayBest)
+      : -1;
+
   const setSet = (i: number, patch: Partial<StrengthEntry['sets'][number]>) =>
     onChange({ ...entry, sets: entry.sets.map((s, j) => (j === i ? { ...s, ...patch } : s)) });
+
+  const top = entry.sets.length ? Math.max(...entry.sets.map((s) => s.weightKg)) : 0;
 
   return (
     <>
@@ -206,58 +233,79 @@ function StrengthEditor(props: { entry: StrengthEntry; exercises: Exercise[]; on
         exercises={exercises}
         onChange={(exerciseId) => onChange({ ...entry, exerciseId })}
       />
-      {exercise?.oneRepMax && <span className="muted small">1RM {formatKg(exercise.oneRepMax)}</span>}
-      <div>
-        {entry.sets.map((s, i) => (
-          <div key={i} className={`set-row ${s.done ? 'done' : ''}`}>
-            <span className="set-num">{i + 1}</span>
-            <button
-              className="set-main"
-              onClick={() => setOpen(open === i ? null : i)}
-              aria-expanded={open === i}
-              aria-label={`Edit set ${i + 1}`}
-            >
-              {formatKg(s.weightKg)} × {s.reps}
-              {s.rir !== undefined && <span className="muted small"> · RIR {s.rir}</span>}
-            </button>
-            <button
-              className={`check ${s.done ? 'on' : ''}`}
-              onClick={() => setSet(i, { done: !s.done })}
-              aria-pressed={s.done}
-              aria-label={`Set ${i + 1} done`}
-            >
-              ✓
-            </button>
-            {open === i && (
-              <div className="set-edit">
-                <Stepper label="Weight kg" value={s.weightKg} step={weightStep} onChange={(weightKg) => setSet(i, { weightKg })} />
-                <Stepper label="Reps" value={s.reps} step={1} onChange={(reps) => setSet(i, { reps: Math.round(reps) })} />
-                <Stepper
-                  label="RIR"
-                  value={s.rir ?? 0}
-                  step={1}
-                  onChange={(rir) => setSet(i, { rir: Math.round(rir) })}
-                />
-                <div className="row">
-                  {s.rir !== undefined && (
-                    <button className="btn ghost grow" onClick={() => setSet(i, { rir: undefined })}>
-                      Clear RIR
+      {(exercise?.oneRepMax || previous) && (
+        <p className="muted small">
+          {exercise?.oneRepMax
+            ? `1RM ${formatKg(exercise.oneRepMax)}${top > 0 ? ` · top set is ${Math.round((top / exercise.oneRepMax) * 100)}%` : ''}`
+            : ''}
+          {exercise?.oneRepMax && previous ? ' · ' : ''}
+          {previous ? `Last done ${formatShortDate(previous.date)}` : ''}
+        </p>
+      )}
+      <div className="set-table">
+        <div className="set-head">
+          <span>Set</span>
+          <span>Previous</span>
+          <span>kg</span>
+          <span>Reps</span>
+          <span />
+        </div>
+        {entry.sets.map((s, i) => {
+          const prev = previous?.sets[Math.min(i, previous.sets.length - 1)];
+          return (
+            <div key={i} className={`set-line ${s.done ? 'done' : ''}`}>
+              <button
+                className="set-no"
+                onClick={() => setOpen(open === i ? null : i)}
+                aria-expanded={open === i}
+                aria-label={`Set ${i + 1} options`}
+              >
+                {i === recordIndex ? <span className="pr">PR</span> : i + 1}
+              </button>
+              <button
+                className="set-prev"
+                disabled={!prev}
+                onClick={() => prev && setSet(i, { weightKg: prev.weightKg, reps: prev.reps })}
+                aria-label={prev ? `Use previous: ${prev.weightKg} kg for ${prev.reps}` : 'No previous set'}
+              >
+                {prev ? `${Number(prev.weightKg.toFixed(2))} × ${prev.reps}` : '—'}
+              </button>
+              <NumCell label={`Set ${i + 1} weight in kg`} value={s.weightKg} onChange={(weightKg) => setSet(i, { weightKg })} />
+              <NumCell label={`Set ${i + 1} reps`} value={s.reps} integer onChange={(reps) => setSet(i, { reps })} />
+              <button
+                className={`check ${s.done ? 'on' : ''}`}
+                onClick={() => setSet(i, { done: !s.done })}
+                aria-pressed={s.done}
+                aria-label={`Set ${i + 1} done`}
+              >
+                ✓
+              </button>
+              {open === i && (
+                <div className="set-edit">
+                  <Stepper label="Weight kg" value={s.weightKg} step={weightStep} onChange={(weightKg) => setSet(i, { weightKg })} />
+                  <Stepper label="Reps" value={s.reps} step={1} onChange={(reps) => setSet(i, { reps: Math.round(reps) })} />
+                  <Stepper label="RIR" value={s.rir ?? 0} step={1} onChange={(rir) => setSet(i, { rir: Math.round(rir) })} />
+                  <div className="row">
+                    {s.rir !== undefined && (
+                      <button className="btn ghost grow" onClick={() => setSet(i, { rir: undefined })}>
+                        Clear RIR
+                      </button>
+                    )}
+                    <button
+                      className="btn ghost danger grow"
+                      onClick={() => {
+                        setOpen(null);
+                        onChange({ ...entry, sets: entry.sets.filter((_, j) => j !== i) });
+                      }}
+                    >
+                      Remove set
                     </button>
-                  )}
-                  <button
-                    className="btn ghost danger grow"
-                    onClick={() => {
-                      setOpen(null);
-                      onChange({ ...entry, sets: entry.sets.filter((_, j) => j !== i) });
-                    }}
-                  >
-                    Remove set
-                  </button>
+                  </div>
                 </div>
-              </div>
-            )}
-          </div>
-        ))}
+              )}
+            </div>
+          );
+        })}
       </div>
       <button
         className="btn"
@@ -265,11 +313,11 @@ function StrengthEditor(props: { entry: StrengthEntry; exercises: Exercise[]; on
           const last = entry.sets[entry.sets.length - 1];
           onChange({
             ...entry,
-            sets: [...entry.sets, { reps: last?.reps ?? 5, weightKg: last?.weightKg ?? 20, done: true }],
+            sets: [...entry.sets, { reps: last?.reps ?? 5, weightKg: last?.weightKg ?? 20, done: false }],
           });
         }}
       >
-        + Set
+        + Add set
       </button>
     </>
   );
@@ -304,7 +352,7 @@ function MetconEditor(props: { entry: MetconEntry; workout: Workout; onChange: P
         />
         <datalist id={listId}>{names?.map((n) => <option key={n} value={n} />)}</datalist>
       </label>
-      {entry.description && <p className="pre">{entry.description}</p>}
+      {entry.description && <p className="wod pre">{entry.description}</p>}
       {last && (
         <p className="last-time">
           Last time: {last.score}

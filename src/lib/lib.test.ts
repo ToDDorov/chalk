@@ -4,6 +4,19 @@ import { normalizeName, parseTimeToSeconds } from './score';
 import { parsePlanText, planExerciseNames } from './plan';
 import { summarizeSets } from './summary';
 import { backupDue, parseBackup } from './backup';
+import {
+  bestWeightElsewhere,
+  epley,
+  formatSeconds,
+  liftHistory,
+  liftRecords,
+  metconSeries,
+  niceTicks,
+  previousLift,
+  weekStreak,
+  weeklySessions,
+} from './stats';
+import type { Workout } from '../types';
 
 describe('dates', () => {
   it('starts weeks on Monday', () => {
@@ -168,5 +181,74 @@ describe('backup', () => {
     expect(backupDue({ ...base, firstUse: '2026-11-16', hasData: false })).toBe(false);
     expect(backupDue({ ...base, firstUse: '2026-11-16', snoozedOn: '2026-12-18' })).toBe(false);
     expect(backupDue({ ...base, firstUse: '2026-11-16', snoozedOn: '2026-12-13' })).toBe(true);
+  });
+});
+
+describe('stats', () => {
+  const set = (weightKg: number, reps: number, done = true) => ({ weightKg, reps, done });
+  const lift = (id: string, date: string, sets: ReturnType<typeof set>[]): Workout => ({
+    id,
+    date,
+    title: 'x',
+    metconNames: [],
+    entries: [{ kind: 'strength', exerciseId: 'sq', sets }],
+  });
+  const metcon = (id: string, date: string, score: string, scoreSeconds?: number): Workout => ({
+    id,
+    date,
+    title: 'x',
+    metconNames: ['fran'],
+    entries: [{ kind: 'metcon', name: 'Fran', scoreType: 'time', score, scoreSeconds, rx: true }],
+  });
+  const log = [
+    lift('a', '2026-11-02', [set(80, 5), set(80, 5), set(90, 5, false)]),
+    lift('b', '2026-11-09', [set(85, 5), set(100, 1)]),
+    lift('c', '2026-11-16', [set(90, 3)]),
+  ];
+
+  it('estimates 1RM with Epley and leaves singles alone', () => {
+    expect(epley(100, 1)).toBe(100);
+    expect(epley(90, 5)).toBeCloseTo(105);
+  });
+
+  it('builds lift history from completed sets only', () => {
+    const h = liftHistory(log, 'sq');
+    expect(h.map((s) => s.date)).toEqual(['2026-11-02', '2026-11-09', '2026-11-16']);
+    expect(h[0].top.weightKg).toBe(80); // the 90 was not completed
+    expect(h[0].e1rm).toBe(93.3);
+    expect(h[1].top.weightKg).toBe(100);
+    expect(liftHistory(log, 'other')).toEqual([]);
+  });
+
+  it('finds the previous session and records', () => {
+    expect(previousLift(log, 'sq', '2026-11-16', 'c')?.date).toBe('2026-11-09');
+    expect(previousLift(log, 'sq', '2026-11-02', 'a')).toBeUndefined();
+    expect(bestWeightElsewhere(log, 'sq', 'b')).toBe(90);
+    expect(bestWeightElsewhere(log, 'sq', 'c')).toBe(100);
+    const [r] = liftRecords(log);
+    expect(r.heaviest).toEqual({ weightKg: 100, reps: 1, date: '2026-11-09' });
+    expect(r.bestE1rm).toEqual({ value: 100, date: '2026-11-09' });
+  });
+
+  it('groups metcons by name in date order', () => {
+    const [m] = metconSeries([metcon('y', '2026-11-10', '4:10', 250), metcon('x', '2026-10-01', '4:30', 270)]);
+    expect(m.results.map((r) => r.score)).toEqual(['4:30', '4:10']);
+  });
+
+  it('counts sessions per week and the streak', () => {
+    const weeks = weeklySessions(log, '2026-11-18', 4);
+    expect(weeks.map((w) => w.weekStart)).toEqual(['2026-10-26', '2026-11-02', '2026-11-09', '2026-11-16']);
+    expect(weeks.map((w) => w.count)).toEqual([0, 1, 1, 1]);
+    expect(weekStreak(log, '2026-11-18')).toBe(3);
+    expect(weekStreak(log, '2026-11-25')).toBe(3); // an empty current week does not break it
+    expect(weekStreak(log, '2026-12-02')).toBe(0);
+  });
+
+  it('picks round axis ticks and formats times', () => {
+    expect(niceTicks(0, 3, 3)).toEqual([0, 1, 2, 3]);
+    expect(niceTicks(93.3, 105, 3)).toEqual([90, 95, 100, 105]);
+    expect(niceTicks(50, 50, 3).length).toBeGreaterThan(1);
+    expect(formatSeconds(104)).toBe('1:44');
+    expect(formatSeconds(59.6)).toBe('1:00');
   });
 });

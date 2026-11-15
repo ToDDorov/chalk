@@ -509,3 +509,211 @@ button.card {
   height: 24px;
   accent-color: var(--accent);
 }
+
+/* ---- Set table (workout editor) ---- */
+
+.set-table {
+  display: flex;
+  flex-direction: column;
+}
+
+.set-head,
+.set-line {
+  display: grid;
+  grid-template-columns: 40px 1fr 72px 60px var(--tap);
+  align-items: center;
+  gap: 8px;
+}
+
+.set-head {
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+  text-align: center;
+  padding: 0 6px 4px;
+  margin: 0 -6px;
+}
+
+.set-line {
+  padding: 5px 6px;
+  margin: 0 -6px;
+  border-radius: 10px;
+}
+
+.set-line.done {
+  background: rgba(95, 207, 138, 0.13);
+}
+
+.set-no,
+.set-prev {
+  min-height: var(--tap);
+  background: none;
+  border: none;
+  padding: 0;
+  text-align: center;
+}
+
+.set-no {
+  font-weight: 700;
+  font-size: 17px;
+}
+
+.set-prev {
+  color: var(--muted);
+  font-size: 15px;
+  white-space: nowrap;
+}
+
+.set-prev:disabled {
+  opacity: 0.6;
+}
+
+.num-cell {
+  width: 100%;
+  height: var(--tap);
+  text-align: center;
+  font-size: 19px;
+  font-weight: 700;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  background: var(--bg);
+  padding: 0 2px;
+}
+
+.set-line.done .num-cell {
+  background: transparent;
+  border-color: transparent;
+}
+
+.pr {
+  display: inline-block;
+  font-size: 12px;
+  font-weight: 800;
+  padding: 3px 6px;
+  border-radius: 6px;
+  background: var(--accent);
+  color: var(--accent-ink);
+}
+
+.wod {
+  font-size: 17px;
+  line-height: 1.5;
+  padding: 12px;
+  border-radius: 10px;
+  background: var(--bg);
+  border-left: 3px solid var(--accent);
+}
+
+/* ---- Progress ---- */
+
+.tiles {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+}
+
+.tile {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 12px;
+}
+
+.tile .value {
+  font-size: 28px;
+  font-weight: 700;
+  line-height: 1.1;
+}
+
+.tile .label {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.chart {
+  display: block;
+  width: 100%;
+  height: auto;
+  touch-action: pan-y;
+  user-select: none;
+}
+
+.chart text {
+  fill: var(--muted);
+  font-size: 11px;
+}
+
+.chart .value-label {
+  fill: var(--text);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.readout {
+  min-height: 22px;
+  font-size: 14px;
+}
+
+.readout b {
+  font-size: 16px;
+}
+
+.seg {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
+  gap: 4px;
+  padding: 4px;
+  border-radius: 12px;
+  background: var(--bg);
+  border: 1px solid var(--line);
+}
+
+.seg button {
+  min-height: 40px;
+  border-radius: 9px;
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.seg button.on {
+  background: var(--surface-2);
+  color: var(--text);
+}
+
+.record {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 2px 12px;
+  align-items: baseline;
+  width: 100%;
+  min-height: var(--tap);
+  padding: 8px 0;
+  background: none;
+  border: none;
+  border-top: 1px solid var(--line);
+  text-align: left;
+}
+
+.record .big {
+  font-weight: 700;
+  font-size: 17px;
+  text-align: right;
+}
+
+.record .sub {
+  grid-column: 1 / -1;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.delta-good {
+  color: var(--good);
+}
+
+.delta-bad {
+  color: var(--bad);
+}
